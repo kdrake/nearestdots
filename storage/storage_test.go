@@ -47,3 +47,19 @@ func TestNearest(t *testing.T) {
 	drivers, _ := s.Nearest(1000, 42.876420, 74.588332)
 	assert.Equal(t, 1, len(drivers))
 }
+
+func BenchmarkNearest(b *testing.B) {
+	s := New()
+	for i := 0; i < 100; i++ {
+		s.Set(i, &Driver{
+			ID: i,
+			LastLocation: Location{
+				Lat: float64(i),
+				Lon: float64(i),
+			},
+		})
+	}
+	for i := 0; i < b.N; i++ {
+		s.Nearest(1000, 123, 123)
+	}
+}
