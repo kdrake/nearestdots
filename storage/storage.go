@@ -3,6 +3,8 @@ package storage
 import (
 	"errors"
 	"math"
+
+	"github.com/dhconnelly/rtreego"
 )
 
 type (
@@ -18,34 +20,49 @@ type (
 	}
 )
 
+// Bounds method needs for correct working of rtree
+// Lat - Y, Lon - X on coordinate system
+func (d *Driver) Bounds() *rtreego.Rect {
+	return rtreego.Point{d.LastLocation.Lat, d.LastLocation.Lon}.ToRect(0.01)
+}
+
 // ErrDriverDoesNotExist sign what driver does not exist
 var ErrDriverDoesNotExist = errors.New("Driver does not exist")
 
 // DriverStorage is main storage for our project
 type DriverStorage struct {
-	drivers map[int]*Driver
+	drivers   map[int]*Driver
+	locations *rtreego.Rtree
 }
 
 // New creates new instance of DriverStorage
 func New() *DriverStorage {
 	d := &DriverStorage{}
 	d.drivers = make(map[int]*Driver)
+	d.locations = rtreego.NewTree(2, 25, 50)
 	return d
 }
 
 // Set sets driver to storage by key
 func (d *DriverStorage) Set(key int, driver *Driver) {
+	_, ok := d.drivers[key]
+	if !ok {
+		d.locations.Insert(driver)
+	}
 	d.drivers[key] = driver
 }
 
 // Delete removes driver from storage by key
 func (d *DriverStorage) Delete(key int) error {
-	_, ok := d.drivers[key]
+	driver, ok := d.drivers[key]
 	if !ok {
 		return ErrDriverDoesNotExist
 	}
-	delete(d.drivers, key)
-	return nil
+	if d.locations.Delete(driver) {
+		delete(d.drivers, key)
+		return nil
+	}
+	return errors.New("could not remove driver")
 }
 
 // Get gets driver from storage and an error if nothing found
@@ -58,15 +75,17 @@ func (d *DriverStorage) Get(key int) (*Driver, error) {
 }
 
 // Nearest returns nearest drivers by location
-func (d *DriverStorage) Nearest(radius, lat, lon float64) ([]*Driver, error) {
-	var res []*Driver
-	for _, driver := range d.drivers {
-		d := Distance(driver.LastLocation.Lat, driver.LastLocation.Lon, lat, lon)
-		if d <= radius {
-			res = append(res, driver)
+func (d *DriverStorage) Nearest(count int, lat, lon float64) []*Driver {
+	point := rtreego.Point{lat, lon}
+	results := d.locations.NearestNeighbors(count, point)
+	var drivers []*Driver
+	for _, item := range results {
+		if item == nil {
+			continue
 		}
+		drivers = append(drivers, item.(*Driver))
 	}
-	return res, nil
+	return drivers
 }
 
 // haversin(θ) function
